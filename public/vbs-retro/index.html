@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0f18" />
+  <title>VBS Retro</title>
+  <style>
+    :root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark;--bg:#0a0f18;--panel:#111827;--panel2:#172033;--line:#26324a;--text:#f7f9fc;--muted:#9eabc2;--accent:#63d6ff;--ok:#64e6a1;--bad:#ff7b8e}
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at top,#172033 0,#0a0f18 42%);color:var(--text);min-height:100vh}
+    button,input{font:inherit}.shell{max-width:1100px;margin:auto;padding:20px 16px 60px}.top{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px}.brand h1{font-size:clamp(28px,7vw,54px);margin:0;letter-spacing:-.04em}.brand p{margin:4px 0 0;color:var(--muted)}
+    .pill{padding:8px 12px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:#0e1522}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}.card,.panel{border:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel));border-radius:22px;box-shadow:0 16px 40px #0005}.card{padding:16px;min-height:190px;display:flex;flex-direction:column;justify-content:space-between}.system{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}.card h3{font-size:20px;line-height:1.15;margin:12px 0 8px}.meta{font-size:13px;color:var(--muted);word-break:break-word}.actions{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}.btn{appearance:none;border:0;border-radius:14px;padding:11px 14px;background:#24324b;color:white;font-weight:700;cursor:pointer}.btn.primary{background:var(--accent);color:#071019}.btn.danger{background:#3a1f28;color:#ffb0bc}.btn:disabled{opacity:.45;cursor:not-allowed}.import{margin:18px 0;padding:18px}.importRow{display:flex;gap:10px;flex-wrap:wrap}.drop{flex:1;min-width:220px;border:1px dashed #46617e;border-radius:16px;padding:16px;background:#0d1522}.drop input{width:100%}
+    #playerPanel{display:none;padding:14px;margin:18px 0}.stage{aspect-ratio:4/3;background:#000;border-radius:16px;overflow:hidden;display:grid;place-items:center}.stage #game{width:100%;height:100%}.toolbar{display:flex;gap:8px;flex-wrap:wrap;padding-top:12px}.debug{margin-top:18px;padding:18px}.debug pre{white-space:pre-wrap;word-break:break-word;background:#090e16;border:1px solid var(--line);border-radius:14px;padding:14px;max-height:320px;overflow:auto;color:#c5d1e7}.statusOk{color:var(--ok)}.statusBad{color:var(--bad)}
+    @media(max-width:600px){.shell{padding:14px 12px 40px}.top{align-items:flex-start;flex-direction:column}.card{min-height:165px}.btn{min-height:44px}}
+  </style>
+</head>
+<body>
+<main class="shell">
+  <header class="top"><div class="brand"><h1>VBS Retro</h1><p>Private ROM library · EmulatorJS · local-first cartridge runtime</p></div><div class="pill" id="bootState">BOOTING</div></header>
+
+  <section class="panel import">
+    <div class="system">ROM IMPORT</div>
+    <h2>Add a cartridge</h2>
+    <div class="importRow">
+      <label class="drop">Choose a ROM file (.md, .gen, .bin, .smd, .zip)<br><br><input id="romInput" type="file" accept=".md,.gen,.bin,.smd,.zip,application/zip,application/octet-stream" /></label>
+      <button class="btn primary" id="importBtn">IMPORT ROM</button>
+    </div>
+    <p class="meta">ROM bytes stay in this browser's IndexedDB by default. Commercial ROM binaries are not bundled with this page.</p>
+  </section>
+
+  <section id="library" class="grid" aria-live="polite"></section>
+
+  <section id="playerPanel" class="panel">
+    <div class="system">EMULATOR</div><h2 id="nowPlaying">Now playing</h2>
+    <div class="stage"><div id="game"></div></div>
+    <div class="toolbar"><button class="btn" onclick="location.reload()">EXIT / RELOAD</button><button class="btn" id="copyDebugBtn">COPY DEBUG</button></div>
+  </section>
+
+  <section class="panel debug">
+    <div class="system">CORE LENS</div><h2>Debug / Trace</h2><pre id="debugLog">Booting…</pre>
+  </section>
+</main>
+<script>
+(() => {
+  'use strict';
+  const DB_NAME='vbs-retro'; const DB_VERSION=1; const STORE='roms'; const TRACE='vbs-retro-trace';
+  const seedUrl='./vbs-retro.seed.json'; let seed=null; let db=null; let traces=[];
+  const $=s=>document.querySelector(s); const debug=$('#debugLog');
+  function trace(event,data={}){const row={ts:new Date().toISOString(),event,...data};traces.push(row);if(traces.length>100)traces=traces.slice(-100);localStorage.setItem(TRACE,JSON.stringify(traces));debug.textContent=JSON.stringify({seed:seed?.project?.id||null,engine:seed?.engine||null,last:row,trace:traces.slice(-12)},null,2);}
+  function openDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB_NAME,DB_VERSION);req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(STORE))d.createObjectStore(STORE,{keyPath:'id'});};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+  function tx(mode='readonly'){return db.transaction(STORE,mode).objectStore(STORE)}
+  function getAll(){return new Promise((resolve,reject)=>{const r=tx().getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);});}
+  function getOne(id){return new Promise((resolve,reject)=>{const r=tx().get(id);r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error);});}
+  function putOne(v){return new Promise((resolve,reject)=>{const r=tx('readwrite').put(v);r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error);});}
+  function deleteOne(id){return new Promise((resolve,reject)=>{const r=tx('readwrite').delete(id);r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error);});}
+  async function sha256(file){const buf=await file.arrayBuffer();const hash=await crypto.subtle.digest('SHA-256',buf);return [...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('');}
+  function slug(s){return s.toLowerCase().replace(/\.[^.]+$/,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,80)||crypto.randomUUID();}
+  function titleFor(file){return file.name.replace(/\.(md|gen|bin|smd|zip)$/i,'');}
+  async function render(){const rows=await getAll();const byName=new Map(rows.map(r=>[r.filename.toLowerCase(),r]));const seeded=(seed?.library||[]).map(item=>({...item,local:byName.get((item.expectedFilename||'').toLowerCase())||null}));const extras=rows.filter(r=>!seeded.some(s=>s.local?.id===r.id));const all=[...seeded,...extras.map(r=>({id:r.id,title:r.title,system:r.system,status:'imported',local:r}))];
+    $('#library').innerHTML=all.map(item=>{const r=item.local;const status=r?'<span class="statusOk">READY</span>':'<span class="statusBad">IMPORT REQUIRED</span>';return `<article class="card"><div><div class="system">${item.system||'segaMD'}</div><h3>${escapeHtml(item.title)}</h3><div class="meta">${status}${r?`<br>${formatBytes(r.size)}<br>SHA-256 ${r.sha256.slice(0,16)}…`:''}</div></div><div class="actions"><button class="btn primary" ${r?'':'disabled'} data-play="${r?.id||''}">PLAY</button>${r?`<button class="btn danger" data-delete="${r.id}">REMOVE</button>`:''}</div></article>`}).join('');
+    document.querySelectorAll('[data-play]').forEach(b=>b.onclick=()=>launch(b.dataset.play));document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{await deleteOne(b.dataset.delete);trace('DELETE',{id:b.dataset.delete});render();});
+  }
+  async function importRom(){const f=$('#romInput').files?.[0];if(!f){trace('ERROR',{message:'No ROM selected'});return;}const allowed=/\.(md|gen|bin|smd|zip)$/i.test(f.name);if(!allowed){trace('ERROR',{message:'Unsupported extension',filename:f.name});return;}$('#importBtn').disabled=true;try{const hash=await sha256(f);const id=slug(f.name)+'-'+hash.slice(0,12);const row={id,title:titleFor(f),filename:f.name,size:f.size,type:f.type,sha256:hash,system:'segaMD',blob:f,addedAt:new Date().toISOString()};await putOne(row);trace('IMPORT',{id,filename:f.name,size:f.size,sha256:hash});await render();}catch(e){trace('ERROR',{message:String(e?.message||e)});}finally{$('#importBtn').disabled=false;}}
+  async function launch(id){try{const row=await getOne(id);if(!row)throw new Error('ROM not found in local library');const romUrl=URL.createObjectURL(row.blob);$('#playerPanel').style.display='block';$('#nowPlaying').textContent=row.title;$('#playerPanel').scrollIntoView({behavior:'smooth'});
+      window.EJS_player='#game';window.EJS_core=row.system||'segaMD';window.EJS_gameUrl=romUrl;window.EJS_gameName=row.title;window.EJS_gameID=parseInt(row.sha256.slice(0,8),16)>>>0;window.EJS_pathtodata=seed.engine.dataPath;window.EJS_browserMode=seed.engine.mobileMode;window.EJS_threads=!!seed.engine.threads;window.EJS_startOnLoaded=true;window.EJS_volume=.8;window.EJS_color='#63d6ff';
+      trace('PLAY',{id,title:row.title,core:window.EJS_core,gameID:window.EJS_gameID});
+      if(!document.querySelector('script[data-ejs-loader]')){const s=document.createElement('script');s.src=window.EJS_pathtodata+'loader.js';s.dataset.ejsLoader='1';s.onerror=()=>trace('ERROR',{message:'Failed to load EmulatorJS loader'});document.body.appendChild(s);}else{trace('ERROR',{message:'Emulator already initialised; reload before switching ROMs'});}
+    }catch(e){trace('ERROR',{message:String(e?.message||e)});}}
+  function escapeHtml(v=''){return v.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+  function formatBytes(n){if(!Number.isFinite(n))return '';const u=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++;}return `${n.toFixed(i?1:0)} ${u[i]}`;}
+  async function boot(){try{traces=JSON.parse(localStorage.getItem(TRACE)||'[]');const res=await fetch(seedUrl,{cache:'no-store'});if(!res.ok)throw new Error('Seed fetch failed: '+res.status);seed=await res.json();db=await openDb();$('#bootState').textContent='READY';$('#bootState').classList.add('statusOk');trace('BOOT',{project:seed.project.id,system:seed.engine.system});await render();}catch(e){$('#bootState').textContent='BOOT ERROR';$('#bootState').classList.add('statusBad');trace('ERROR',{message:String(e?.message||e)});}}
+  $('#importBtn').onclick=importRom;$('#copyDebugBtn').onclick=()=>navigator.clipboard?.writeText(debug.textContent);boot();
+})();
+</script>
+</body>
+</html>

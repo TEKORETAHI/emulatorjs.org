@@ -1,0 +1,39 @@
+name: VBS Retro CI
+
+on:
+  pull_request:
+    paths:
+      - 'public/vbs-retro/**'
+      - '.github/workflows/vbs-retro-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate VBS Retro seed and shell
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path('public/vbs-retro')
+          seed_path = root / 'vbs-retro.seed.json'
+          index_path = root / 'index.html'
+          assert seed_path.exists(), 'missing seed'
+          assert index_path.exists(), 'missing shell'
+          seed = json.loads(seed_path.read_text())
+          assert seed['project']['id'] == 'vbs-retro'
+          assert seed['engine']['system'] == 'segaMD'
+          assert seed['engine']['threads'] is False
+          html = index_path.read_text()
+          required = ['indexedDB.open', 'crypto.subtle.digest', 'EJS_player', 'EJS_core', 'EJS_gameUrl', 'EJS_gameID', 'EJS_browserMode', 'loader.js', 'Debug / Trace']
+          missing = [x for x in required if x not in html]
+          assert not missing, f'missing runtime hooks: {missing}'
+          forbidden = ['sk-proj-', 'service_role', 'CLOUDFLARE_API_TOKEN']
+          found = [x for x in forbidden if x in html or x in seed_path.read_text()]
+          assert not found, f'forbidden secret markers: {found}'
+          print('VBS Retro conformance: PASS')
+          PY

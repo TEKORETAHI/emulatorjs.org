@@ -1,0 +1,73 @@
+{
+  "$schema": "vbs://seed/1.0",
+  "vbs": "1.0",
+  "project": {
+    "id": "vbs-retro",
+    "name": "VBS Retro",
+    "purpose": "A local-first browser emulator shell with private ROM import, deterministic cartridge metadata, debug traces and Cloudflare-ready delivery."
+  },
+  "engine": {
+    "emulator": "EmulatorJS",
+    "system": "segaMD",
+    "preferredCore": "genesis_plus_gx",
+    "dataPath": "https://cdn.emulatorjs.org/stable/data/",
+    "threads": false,
+    "mobileMode": "mobile"
+  },
+  "capabilities": [
+    "rom.import.local",
+    "rom.hash.sha256",
+    "rom.store.indexeddb",
+    "emulator.launch",
+    "save.local",
+    "trace.local",
+    "debug.inspect"
+  ],
+  "library": [
+    {
+      "id": "sonic-2-world-reva",
+      "title": "Sonic The Hedgehog 2 (World) (Rev A)",
+      "system": "segaMD",
+      "expectedFilename": "Sonic The Hedgehog 2 (World) (Rev A).md",
+      "source": "private-upload-required",
+      "status": "awaiting-import"
+    },
+    {
+      "id": "mortal-kombat-3",
+      "title": "Mortal Kombat 3",
+      "system": "segaMD",
+      "expectedFilename": "Mortal Kombat 3.md",
+      "source": "private-upload-required",
+      "status": "awaiting-import"
+    },
+    {
+      "id": "street-fighter-ii-special-champion-edition-europe",
+      "title": "Street Fighter II' - Special Champion Edition (Europe)",
+      "system": "segaMD",
+      "expectedFilename": "Street Fighter II' - Special Champion Edition (Europe).md",
+      "source": "private-upload-required",
+      "status": "awaiting-import"
+    }
+  ],
+  "storage": {
+    "roms": "IndexedDB:vbs-retro/roms",
+    "settings": "localStorage:vbs-retro/settings",
+    "selected": "sessionStorage:vbs-retro/selected"
+  },
+  "tests": [
+    "seed-loads",
+    "indexeddb-opens",
+    "rom-import-hashes",
+    "library-persists",
+    "emulator-config-is-public-api-only",
+    "sega-md-core-resolves"
+  ],
+  "security": {
+    "romPolicy": "User-supplied/private ROMs are stored locally by default. Do not publish commercial ROM binaries in the repository or public bucket.",
+    "secretsInClient": false
+  },
+  "trace": {
+    "mode": "append-local",
+    "events": ["BOOT", "IMPORT", "HASH", "PLAY", "ERROR", "DELETE"]
+  }
+}
